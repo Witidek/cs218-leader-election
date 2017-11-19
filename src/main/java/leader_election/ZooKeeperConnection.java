@@ -1,26 +1,20 @@
 package leader_election;
 
-//import java classes
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 
-//import zookeeper classes
-import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
 import org.apache.zookeeper.ZooKeeper;
-import org.apache.zookeeper.AsyncCallback.StatCallback;
-import org.apache.zookeeper.KeeperException.Code;
-import org.apache.zookeeper.data.Stat;
 
 public class ZooKeeperConnection {
 
-	// Declare zookeeper instance to access ZooKeeper ensemble
+	// Declare ZooKeeper instance to access ZooKeeper ensemble
 	private ZooKeeper zoo;
 	final CountDownLatch connectedSignal = new CountDownLatch(1);
 
-	// Method to connect zookeeper ensemble, returns actual ZooKeeper object
+	// Method to connect ZooKeeper ensemble, returns actual ZooKeeper object
 	public ZooKeeper connect(String host) throws IOException,InterruptedException {
 	
 		zoo = new ZooKeeper(host,5000,new Watcher() {
@@ -35,7 +29,7 @@ public class ZooKeeperConnection {
 		return zoo;
 	}
 
-	// Method to disconnect from zookeeper server
+	// Method to disconnect from ZooKeeper server
 	public void close() throws InterruptedException {
 		zoo.close();
 	}
