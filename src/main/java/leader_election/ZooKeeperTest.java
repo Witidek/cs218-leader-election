@@ -37,12 +37,6 @@ public class ZooKeeperTest {
 	// ZooKeeper base election path
 	private static final String BASE_ELECTION_PATH = "/ELECTION";
 	
-	// Create static instance for ZooKeeper class.
-	private static ZooKeeper zk;
-
-	// Create static instance for ZooKeeperConnection class.
-	private static ZooKeeperConnection conn;
-	
 	// List of references to worker threads
 	private static List<ZooKeeperWorker> workers = new ArrayList<>();
 
@@ -52,8 +46,10 @@ public class ZooKeeperTest {
  
 		// Add arrays to heap
 		for (int i = 0; i < sortedArrays.length; i++) {
-			heap.add(new ArrayPointer(sortedArrays[i], 0));
-			totalSize += sortedArrays[i].length;
+			if (sortedArrays[i].length > 0) {
+				heap.add(new ArrayPointer(sortedArrays[i], 0));
+				totalSize += sortedArrays[i].length;
+			}
 		}
 		
 		// Create final merged array and index
@@ -76,8 +72,7 @@ public class ZooKeeperTest {
 	public static void main(String[] args) throws KeeperException,InterruptedException {
 		try {
 			// Connect to ZooKeeper server to get ZooKeeper object
-			conn = new ZooKeeperConnection();
-			zk = conn.connect("localhost");
+			ZooKeeper zk = new ZooKeeper("localhost:2181", 3000, null);
 			System.out.println("Connected to ZooKeeper server");
 			
 			/* Below is hard coded test example of sorting 3 sub-arrays and merging
@@ -124,6 +119,22 @@ public class ZooKeeperTest {
 			System.out.println("Finished sorting, printing sorted array");
 			int[] sortedArray = mergeSortedArrays(sortedArrays);
 			System.out.println(Arrays.toString(sortedArray));
+			
+			// Shutdown the leader
+			System.out.println("Attempting to terminate the leader");
+			for (int i = 0; i < workers.size(); i++) {
+				if (workers.get(i).isLeader()) {
+					workers.get(i).suicide();
+					workers.remove(i);
+					i--;
+					break;
+				}
+			}
+			
+			// Wait a little and then exit
+			Thread.sleep(2000);
+			System.out.println("Terminating program...");
+			System.exit(0);
 			
 		}catch (Exception e) {
 			System.out.println(e.getMessage());
