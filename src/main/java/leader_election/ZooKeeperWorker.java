@@ -3,6 +3,7 @@ package leader_election;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.PriorityQueue;
 
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -12,6 +13,9 @@ import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooKeeper;
 
 public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooKeeperListener {
+	// Static reference to leader
+	private static ZooKeeperWorker leader;
+	
 	// ZooKeeper base election path
 	private static final String BASE_ELECTION_PATH = "/ELECTION";
 	
@@ -36,23 +40,117 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 	// MergeSort array
 	private int[] data;
 
+	// Private helper class for merge k-sorted arrays
+	private static class ArrayPointer implements Comparable<ArrayPointer> {
+		private int[] array;
+		int arrayIndex;
+		
+		public ArrayPointer(int[] array, int arrayIndex) {
+			this.array = array;
+			this.arrayIndex = arrayIndex;
+		}
+		
+		@Override
+		public int compareTo(ArrayPointer other) {
+			int first = this.array[this.arrayIndex];
+			int second = other.array[other.arrayIndex];
+			if (first < second) {
+				return -1;
+			}else if (first > second) {
+				return 1;
+			}else {
+				return 0;
+			}
+		}
+	}
+	
 	// Constructor
 	public ZooKeeperWorker() {
 		//
+	}
+	
+	// Getter for leader
+	public static ZooKeeperWorker getLeader() {
+		return leader;
 	}
 	
 	// Returns true if this worker is leader
 	public boolean isLeader() {
 		return this.isLeader;
 	}
+	
+	// Getter for zNodeElectionPath
+	public String getZNodeElectionPath() {
+		return this.zNodeElectionPath;
+	}
+	
 	// Getter for MergeSort array
 	public int[] getData() {
-		return data;
+		return this.data;
 	}
 	
 	// Setter for MergeSort array
 	public void setData(int[] data) {
 		this.data = data;
+	}
+	
+	public int[] leaderSort(List<ZooKeeperWorker> workers, int[] input) {
+		// Split input array into multiple arrays
+		int numberOfWorkers = workers.size() - 1;
+		int[][] unsortedArrays = new int[numberOfWorkers][];
+		for (int i = 0; i < numberOfWorkers; i++) {
+			int start = (i == 0) ? 0 : (input.length / numberOfWorkers * i) + 1;
+			int end = (i == numberOfWorkers - 1) ? input.length : (input.length / numberOfWorkers * (i+1)) + 1;
+			unsortedArrays[i] = Arrays.copyOfRange(input, start, end);
+		}
+		
+		// Give sub-arrays to worker threads to sort
+		System.out.println("Sending sub-arrays to be sorted by worker threads...");
+		int[][] sortedArrays = new int[numberOfWorkers][];
+		int j = 0;
+		for (int i = 0; i < numberOfWorkers; i++) {
+			ZooKeeperWorker worker = workers.get(j);
+			// Skip leader
+			if (worker.isLeader()) {
+				j++;
+				worker = workers.get(j);
+			}
+			worker.setData(unsortedArrays[i]);
+			sortedArrays[i] = worker.mergeSort();
+			j++;
+		}
+		
+		// Merge k-sorted arrays
+		return mergeSortedArrays(sortedArrays);
+	}
+	
+	private int[] mergeSortedArrays(int[][] sortedArrays) {
+		PriorityQueue<ArrayPointer> heap = new PriorityQueue<ArrayPointer>();
+		int totalSize = 0;
+ 
+		// Add arrays to heap
+		for (int i = 0; i < sortedArrays.length; i++) {
+			if (sortedArrays[i].length > 0) {
+				heap.add(new ArrayPointer(sortedArrays[i], 0));
+				totalSize += sortedArrays[i].length;
+			}
+		}
+		
+		// Create final merged array and index
+		int result[] = new int[totalSize];
+		int mergeIndex = 0;
+ 
+		// Add min element from heap while heap is not empty
+		while (!heap.isEmpty()){
+			ArrayPointer ap = heap.poll();
+			result[mergeIndex++] = ap.array[ap.arrayIndex];
+ 
+			if(ap.arrayIndex < ap.array.length - 1){
+				heap.add(new ArrayPointer(ap.array, ap.arrayIndex + 1));
+			}
+		}
+ 
+		return result;
 	}
 	
 	// MergeSort data array and return sorted array
@@ -129,7 +227,7 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 			try {
 				zk.create(BASE_ELECTION_PATH, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 			}catch (KeeperException.NodeExistsException e) {
-				System.out.println("ZooKeeperWorker::createWorkerNode(): Base /ELECTION znode creation failed: Node already exists.");
+				//
 			}
 		}
 		zNodeElectionPath = zk.create(BASE_ELECTION_PATH + "/guid-n_", null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
@@ -152,6 +250,7 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 		leaderElectionPath = BASE_ELECTION_PATH + "/" + Collections.min(znodes);
 		if (zNodeElectionPath.equals(leaderElectionPath)) {
 			System.out.println(zNodeElectionPath + " is the new leader!");
+			leader = this;
 			isLeader = true;
 		}else {
 			isLeader = false;
@@ -205,8 +304,8 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 	// The znode being watched was deleted, this znode will check leader and set new node to watch
 	@Override
 	public void onNodeDeleted() {
-		// Do not continue if the leader detecting its own deletion
-		if (watcher.getZNodeWatchPath().equals(zNodeElectionPath)) {
+		// Do not continue if the leader detecting its own deletion or if this worker is already dead
+		if (watcher.getZNodeWatchPath().equals(zNodeElectionPath) || shutdown) {
 			return;
 		}
 		System.out.println(zNodeElectionPath + " detected that " + watcher.getZNodeWatchPath() + " was deleted!");
@@ -229,6 +328,9 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 		System.out.println(zNodeElectionPath + " deleting znode and shutting down");
 		zk.delete(zNodeElectionPath, -1);
 		shutdown = true;
+		if (isLeader) {
+			leader = null;
+		}
 	}
 }
 

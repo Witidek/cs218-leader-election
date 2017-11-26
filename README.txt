@@ -9,17 +9,17 @@ ZooKeeperWorker.java
    worker to perform MergeSort on a given array. Each Worker has a Watcher to
    keep watch the previous znode for its deletion. Detecting its deletion 
    will make the Worker check for new leader (re-election) and set a new
-   Watcher.
+   Watcher. The leader is in charge of splitting input array and dividing
+   sorting subarrays to other Workers and then merging the result.
 
 ZooKeeperWatcher.java
  - Class that extends ZooKeeper API Watcher in order to watch a znode for its
    deletion and inform the Worker listening.
 
 ZooKeeperTest.java
- - Main test example, starts 3 threads with ZooKeeperWorker objects, takes in
-   user input for int array, splits array into 3 sub-arrays to send to the 3
-   worker threads, each worker sorts returns their given array, and then the
-   sorted arrays are merged and printed to stdout. The leader is then deleted
-   and after 2 more seconds the program terminates entirely.
+ - Main interactive test suite/simulator. Connects to ZooKeeper server and
+   is able to create worker/znodes, delete worker/znodes, sort number arrays,
+   and return ZooKeeper worker/znode stats. All workers/znodes are destroyed
+   upon program termination.
 
 Requires ZooKeeper server to be running locally.

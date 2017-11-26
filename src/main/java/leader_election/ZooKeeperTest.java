@@ -11,131 +11,177 @@ import org.apache.zookeeper.KeeperException;
 
 public class ZooKeeperTest {
 	
-	// Private helper class for merge k-sorted arrays
-	private static class ArrayPointer implements Comparable<ArrayPointer> {
-		private int[] array;
-		int arrayIndex;
-		
-		public ArrayPointer(int[] array, int arrayIndex) {
-			this.array = array;
-			this.arrayIndex = arrayIndex;
-		}
-		
-		@Override
-		public int compareTo(ArrayPointer other) {
-			int first = this.array[this.arrayIndex];
-			int second = other.array[other.arrayIndex];
-			if (first < second) {
-				return -1;
-			}else if (first > second) {
-				return 1;
-			}else {
-				return 0;
-			}
-		}
-	}
 	// ZooKeeper base election path
 	private static final String BASE_ELECTION_PATH = "/ELECTION";
 	
+	// ZooKeeper connection object
+	private static ZooKeeper zk;
+	
 	// List of references to worker threads
 	private static List<ZooKeeperWorker> workers = new ArrayList<>();
-
-	private static int[] mergeSortedArrays(int[][] sortedArrays) {
-		PriorityQueue<ArrayPointer> heap = new PriorityQueue<ArrayPointer>();
-		int totalSize = 0;
- 
-		// Add arrays to heap
-		for (int i = 0; i < sortedArrays.length; i++) {
-			if (sortedArrays[i].length > 0) {
-				heap.add(new ArrayPointer(sortedArrays[i], 0));
-				totalSize += sortedArrays[i].length;
-			}
+	
+	// Print list of commands
+	private static void helpCommand() {
+		System.out.println("    stat");
+		System.out.println("    create [number of nodes to create 1-10]");
+		System.out.println("    delete [leader | guid]");
+		System.out.println("    sort [number array]");
+		System.out.println("    exit");
+	}
+	
+	// Print number of znodes, leader path, and all znode paths
+	private static void statCommand() throws KeeperException, InterruptedException {
+		List<String> znodes = zk.getChildren(BASE_ELECTION_PATH, false);
+		System.out.println("Number of znodes in ZooKeeper /ELECTION path: " + znodes.size());
+		ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
+		if (leader != null) {
+			System.out.println("The leader is " + leader.getZNodeElectionPath());
+		}
+		for (String s : znodes) {
+			System.out.println(s);
+		}
+	}
+	
+	// Create between 1-10 new Workers and znodes
+	private static void createCommand(String[] input) {
+		int num = 0;
+		if (input.length < 2) {
+			System.out.println("Usage: create [number of nodes to create 1-10]");
+			return;
+		}
+		try {
+			num = Integer.parseInt(input[1]);
+		}catch (NumberFormatException e) {
+			System.out.println("Usage: create [number of nodes to create 1-10]");
+			return;
+		}
+		if (num < 1 || num > 10) {
+			System.out.println("Usage: create [number of nodes to create 1-10]");
+			return;
 		}
 		
-		// Create final merged array and index
-		int result[] = new int[totalSize];
-		int mergeIndex = 0;
- 
-		// Add min element from heap while heap is not empty
-		while (!heap.isEmpty()){
-			ArrayPointer ap = heap.poll();
-			result[mergeIndex++] = ap.array[ap.arrayIndex];
- 
-			if(ap.arrayIndex < ap.array.length - 1){
-				heap.add(new ArrayPointer(ap.array, ap.arrayIndex + 1));
-			}
+		for (int i = 0; i < num; i++) {
+			ZooKeeperWorker worker = new ZooKeeperWorker();
+			workers.add(worker);
+			new Thread(worker).start();
 		}
- 
-		return result;
+	}
+	
+	// Delete leader or a specific znode by guid
+	private static void deleteCommand(String[] input) throws InterruptedException, KeeperException {
+		if (input.length < 2) {
+			System.out.println("Usage: delete [leader | guid]");
+			return;
+		}
+		
+		if (input[1].equals("leader")) {
+			System.out.println("Attempting to terminate the leader");
+			ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
+			if (leader != null) {
+				leader.suicide();
+			}
+		}else {
+			// Construct full znode path with padded zeroes
+			StringBuilder build = new StringBuilder();
+			build.append(BASE_ELECTION_PATH);
+			build.append("/guid-n_");
+			for (int i = 0; i < 10 - input[1].length(); i++) {
+				build.append("0");
+			}
+			build.append(input[1]);
+			String path = build.toString();
+			
+			// Iterate through workers to find deletion target
+			for (ZooKeeperWorker w : workers) {
+				if (w.getZNodeElectionPath().equals(path)) {
+					w.suicide();
+					return;
+				}
+			}
+			System.out.println(path + " was not found for deletion");
+		}
+	}
+	
+	// Send list of workers and input to leader to deal with
+	private static void sortCommand(String[] input) {
+		// Check number of workers
+		int numberOfWorkers = workers.size();
+		if (numberOfWorkers < 2) {
+			System.out.println("Error: There needs to be at least 2 workers in ZooKeeper to help sort!");
+			return;
+		}
+		
+		// Parse input array
+		int[] inputArray = new int[input.length - 1];
+		for (int i = 1; i < input.length; i++) {
+			inputArray[i-1] = Integer.parseInt(input[i]);
+		}
+		
+		// Send list of workers and input array to leader, have leader split the work amongst workers
+		ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
+		int[] sortedArray = leader.leaderSort(workers, inputArray);
+		
+		// Print returned result
+		System.out.println("Finished sorting, printing sorted array");
+		System.out.println(Arrays.toString(sortedArray));
+	}
+	
+	// Wait a little and then exit
+	private static void exitCommand() throws InterruptedException {
+		System.out.println("Terminating program...");
+		Thread.sleep(1000);
+		System.exit(0);
+					
 	}
 	
 	public static void main(String[] args) throws KeeperException,InterruptedException {
 		try {
 			// Connect to ZooKeeper server to get ZooKeeper object
-			ZooKeeper zk = new ZooKeeper("localhost:2181", 3000, null);
+			zk = new ZooKeeper("localhost:2181", 3000, null);
 			System.out.println("Connected to ZooKeeper server");
 			
-			/* Below is hard coded test example of sorting 3 sub-arrays and merging
-			 * User input is provided as integers delimited by a space, ends with next line
-			 * TODO: Design MergeSort input, design test flow, add print/log lines
-			 */
-			
-			// Create and start 3 threads as ZooKeeper workers
-			for (int i = 0; i < 3; i++) {
-				ZooKeeperWorker worker = new ZooKeeperWorker();
-				workers.add(worker);
-				new Thread(worker).start();
-			}
-			
-			// Take user input of multiple int
-			System.out.println("Enter integers to be sorted delimited by space, press enter when finished");
+			// Take user input
+			System.out.println("Use command 'help' for a list of commands.");
+			System.out.print("ZooKeeperTest$ ");
 			Scanner sc = new Scanner(System.in);
-			String[] input = sc.nextLine().split(" ");
-			sc.close();
-			int[] inputArray = new int[input.length];
-			for (int i = 0; i < input.length; i++) {
-				inputArray[i] = Integer.parseInt(input[i]);
-			}
-			
-			// Split array into 3 parts
-			int[][] unsortedArrays = new int[3][];
-			for (int i = 0; i < 3; i++) {
-				int start = (i == 0) ? 0 : (inputArray.length / 3 * i) + 1;
-				int end = (i == 2) ? inputArray.length : (inputArray.length / 3 * (i+1)) + 1;
-				unsortedArrays[i] = Arrays.copyOfRange(inputArray, start, end);
-			}
-			
-			// Give sub-arrays to worker threads to sort (no leader election, all znodes are workers)
-			// TODO: Maybe not thread safe, might need join() to wait on threads?
-			System.out.println("Sending sub-arrays to be sorted by worker threads...");
-			int[][] sortedArrays = new int[3][];
-			for (int i = 0; i < 3; i++) {
-				ZooKeeperWorker worker = workers.get(i);
-				worker.setData(unsortedArrays[i]);
-				sortedArrays[i] = worker.mergeSort();
-			}
-			
-			// Merge k-sorted arrays and print sorted array
-			System.out.println("Finished sorting, printing sorted array");
-			int[] sortedArray = mergeSortedArrays(sortedArrays);
-			System.out.println(Arrays.toString(sortedArray));
-			
-			// Shutdown the leader
-			System.out.println("Attempting to terminate the leader");
-			for (int i = 0; i < workers.size(); i++) {
-				if (workers.get(i).isLeader()) {
-					workers.get(i).suicide();
-					workers.remove(i);
-					i--;
+			while (sc.hasNextLine()) {
+				
+				String[] input = sc.nextLine().split(" ");
+				
+				if (input.length < 1) {
+					continue;
+				}
+				// Commands
+				switch (input[0]) {
+				case "help":
+					helpCommand();
+					break;
+				case "create":
+					createCommand(input);
+					break;
+				case "delete":
+					deleteCommand(input);
+					break;
+				case "sort":
+					sortCommand(input);
+					break;
+				case "stat":
+					statCommand();
+					break;
+				case "quit":
+				case "exit":
+					sc.close();
+					exitCommand();
+					break;
+				default:
+					System.out.println("Please enter a valid command.");
 					break;
 				}
-			}
-			
-			// Wait a little and then exit
-			Thread.sleep(2000);
-			System.out.println("Terminating program...");
-			System.exit(0);
-			
+				
+				// Delay to make ordering a little nicer
+				Thread.sleep(500);
+				System.out.print("ZooKeeperTest$ ");
+			}	
 		}catch (Exception e) {
 			System.out.println(e.getMessage());
 		}

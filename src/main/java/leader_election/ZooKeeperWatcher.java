@@ -57,6 +57,7 @@ public class ZooKeeperWatcher implements Watcher, StatCallback {
 	@SuppressWarnings("deprecation")
 	@Override
 	public void processResult(int rc, String path, Object ctx, Stat stat) {
+		// Stat callback
 	    switch (rc) {
 	    case Code.Ok:
 	        break;
