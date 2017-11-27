@@ -3,7 +3,6 @@ package leader_election;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.PriorityQueue;
 import java.util.Scanner;
 
 import org.apache.zookeeper.ZooKeeper;
