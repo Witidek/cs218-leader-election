@@ -31,6 +31,10 @@ public class ZooKeeperTest {
 	
 	// Print number of znodes, leader path, and all znode paths
 	private static void statCommand() throws KeeperException, InterruptedException {
+		if (zk.exists(BASE_ELECTION_PATH, false) == null) {
+			System.out.println("/ELECTION path does not exist, there are no znodes");
+			return;
+		}
 		List<String> znodes = zk.getChildren(BASE_ELECTION_PATH, false);
 		System.out.println("Number of znodes in ZooKeeper /ELECTION path: " + znodes.size());
 		ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
@@ -38,7 +42,7 @@ public class ZooKeeperTest {
 			System.out.println("The leader is " + leader.getZNodeElectionPath());
 		}
 		for (String s : znodes) {
-			System.out.println(s);
+			System.out.println(BASE_ELECTION_PATH + "/" + s);
 		}
 	}
 	
@@ -46,17 +50,17 @@ public class ZooKeeperTest {
 	private static void createCommand(String[] input) {
 		int num = 0;
 		if (input.length < 2) {
-			System.out.println("Usage: create [number of nodes to create 1-10]");
+			System.out.println("Usage: create [number of nodes to create 1-50]");
 			return;
 		}
 		try {
 			num = Integer.parseInt(input[1]);
 		}catch (NumberFormatException e) {
-			System.out.println("Usage: create [number of nodes to create 1-10]");
+			System.out.println("Usage: create [number of nodes to create 1-50]");
 			return;
 		}
-		if (num < 1 || num > 10) {
-			System.out.println("Usage: create [number of nodes to create 1-10]");
+		if (num < 1 || num > 50) {
+			System.out.println("Usage: create [number of nodes to create 1-50]");
 			return;
 		}
 		
@@ -182,6 +186,10 @@ public class ZooKeeperTest {
 				Thread.sleep(500);
 				System.out.print("ZooKeeperTest$ ");
 			}	
+			// Terminate program if scanner reached end of input
+			sc.close();
+			System.out.println();
+			exitCommand();
 		}catch (Exception e) {
 			System.out.println(e.getMessage());
 		}
