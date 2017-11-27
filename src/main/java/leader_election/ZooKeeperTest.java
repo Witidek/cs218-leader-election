@@ -95,9 +95,11 @@ public class ZooKeeperTest {
 			String path = build.toString();
 			
 			// Iterate through workers to find deletion target
-			for (ZooKeeperWorker w : workers) {
+			for (int i = 0; i < workers.size(); i++) {
+				ZooKeeperWorker w = workers.get(i);
 				if (w.getZNodeElectionPath().equals(path)) {
 					w.suicide();
+					workers.remove(i);
 					return;
 				}
 			}
