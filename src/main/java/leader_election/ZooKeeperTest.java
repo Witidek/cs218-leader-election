@@ -3,6 +3,7 @@ package leader_election;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.Scanner;
 
 import org.apache.zookeeper.ZooKeeper;
@@ -24,7 +25,8 @@ public class ZooKeeperTest {
 		System.out.println("    stat");
 		System.out.println("    create [number of nodes to create 1-10]");
 		System.out.println("    delete [leader | guid]");
-		System.out.println("    sort [number array]");
+		System.out.println("    msort [number array] | msort random [number of elements]");
+		System.out.println("    qsort [number array] | qsort random [number of elements]");
 		System.out.println("    exit");
 	}
 	
@@ -82,6 +84,7 @@ public class ZooKeeperTest {
 			ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
 			if (leader != null) {
 				leader.suicide();
+				workers.remove(leader);
 			}
 		}else {
 			// Construct full znode path with padded zeroes
@@ -108,7 +111,7 @@ public class ZooKeeperTest {
 	}
 	
 	// Send list of workers and input to leader to deal with
-	private static void sortCommand(String[] input) {
+	private static void sortCommand(String[] input, int type) {
 		// Check number of workers
 		int numberOfWorkers = workers.size();
 		if (numberOfWorkers < 2) {
@@ -116,18 +119,39 @@ public class ZooKeeperTest {
 			return;
 		}
 		
-		// Parse input array
-		int[] inputArray = new int[input.length - 1];
-		for (int i = 1; i < input.length; i++) {
-			inputArray[i-1] = Integer.parseInt(input[i]);
+		int[] inputArray;
+		if (input[1].equals("random")) {
+			// Generate random input
+			if (input.length < 3) {
+				System.out.println("Error: sort random needs an integer input");
+				return;
+			}
+			int size = Integer.parseInt(input[2]);
+			Random random = new Random();
+			inputArray = new int[size];
+			for (int i = 0; i < size; i++) {
+				inputArray[i] = random.nextInt(9999);
+			}
+		}else {
+			// Parse input array
+			inputArray = new int[input.length - 1];
+			for (int i = 1; i < input.length; i++) {
+				inputArray[i-1] = Integer.parseInt(input[i]);
+			}
 		}
+		
+		// Start timer
+		long startTime = System.nanoTime();
 		
 		// Send list of workers and input array to leader, have leader split the work amongst workers
 		ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
-		int[] sortedArray = leader.leaderSort(workers, inputArray);
+		int[] sortedArray = leader.leaderSort(workers, inputArray, type);
 		
+		// End timer
+		long endTime = System.nanoTime();
 		// Print returned result
-		System.out.println("Finished sorting, printing sorted array");
+		long duration = (endTime - startTime) / 1000;
+		System.out.println("Printing sorted array, sorting time: " + duration + " microseconds");
 		System.out.println(Arrays.toString(sortedArray));
 	}
 	
@@ -167,8 +191,11 @@ public class ZooKeeperTest {
 				case "delete":
 					deleteCommand(input);
 					break;
-				case "sort":
-					sortCommand(input);
+				case "msort":
+					sortCommand(input, 0);
+					break;
+				case "qsort":
+					sortCommand(input, 1);
 					break;
 				case "stat":
 					statCommand();

@@ -94,14 +94,26 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 		this.data = data;
 	}
 	
-	public int[] leaderSort(List<ZooKeeperWorker> workers, int[] input) {
+	public int[] leaderSort(List<ZooKeeperWorker> workers, int[] input, int type) {
 		// Split input array into multiple arrays
 		int numberOfWorkers = workers.size() - 1;
 		int[][] unsortedArrays = new int[numberOfWorkers][];
+		int start = 0;
+		int end = 0;
+		int each = input.length / numberOfWorkers;
+		int leftOver = input.length % numberOfWorkers;
 		for (int i = 0; i < numberOfWorkers; i++) {
-			int start = (i == 0) ? 0 : (input.length / numberOfWorkers * i) + 1;
-			int end = (i == numberOfWorkers - 1) ? input.length : (input.length / numberOfWorkers * (i+1)) + 1;
-			unsortedArrays[i] = Arrays.copyOfRange(input, start, end);
+			if (each == 0 && leftOver == 0) {
+				unsortedArrays[i] = new int[0];
+			}else {
+				end += each;
+				if (leftOver > 0) {
+					end++;
+					leftOver--;
+				}
+				unsortedArrays[i] = Arrays.copyOfRange(input, start, end);
+				start = end;
+			}
 		}
 		
 		// Give sub-arrays to worker threads to sort
@@ -111,12 +123,20 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 		for (int i = 0; i < numberOfWorkers; i++) {
 			ZooKeeperWorker worker = workers.get(j);
 			// Skip leader
-			if (worker.isLeader()) {
+			if (worker.isLeader() || worker.equals(this)) {
 				j++;
 				worker = workers.get(j);
 			}
 			worker.setData(unsortedArrays[i]);
-			sortedArrays[i] = worker.mergeSort();
+			
+			// Type 0 mergesort, type 1 quicksort
+			if (type == 0) {
+				sortedArrays[i] = worker.mergeSort();
+			}else if (type == 1) {
+				sortedArrays[i] = worker.quickSort();
+			}else {
+				sortedArrays[i] = new int[0];
+			}
 			j++;
 		}
 		
@@ -156,7 +176,7 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 	// MergeSort data array and return sorted array
 	public int[] mergeSort() {
 		if (data.length > 1) {
-			sort(0, data.length-1);
+			mergeSortSort(0, data.length-1);
 		}
 		System.out.println(zNodeElectionPath + " finished sorting:");
 		System.out.println(Arrays.toString(data));
@@ -164,17 +184,17 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 	}
 	
 	// MergeSort divide & conquer recursive method
-	private void sort(int l, int r) {
+	private void mergeSortSort(int l, int r) {
 		if (l < r) {
 			int m = (l + r) / 2;
-			sort(l, m);
-			sort(m+1, r);
-			merge(l, m, r);
+			mergeSortSort(l, m);
+			mergeSortSort(m+1, r);
+			mergeSortMerge(l, m, r);
 		}
 	}
 	
 	// MergeSort merge method
-	private void merge(int l, int m, int r) {
+	private void mergeSortMerge(int l, int m, int r) {
 		// Create and fill sub-arrays for comparison
 		int leftSize = m - l + 1;
 		int rightSize = r - m;
@@ -217,6 +237,53 @@ public class ZooKeeperWorker implements Watcher, Runnable, ZooKeeperWatcher.ZooK
 			data[mergeIndex] = right[rightIndex];
 			rightIndex++;
 			mergeIndex++;
+		}
+	}
+	
+	// QuickSort
+	private int[] quickSort() {
+		if (data.length > 1) {
+			quickSortSort(0, data.length - 1);
+		}
+		System.out.println(zNodeElectionPath + " finished sorting:");
+		System.out.println(Arrays.toString(data));
+		return data;
+	}
+	
+	// QuickSort recursive method
+	private void quickSortSort(int l, int r) {
+		// Pick middle as pivot value
+		int pivot = data[l + (r-l)/2];
+		int i = l;
+		int j = r;
+		
+		// Swap elements until lesser than pivot are on left and greater on right
+		while (i <= j) {
+			// Find element greater than pivot starting from left
+			while (data[i] < pivot) {
+				i++;
+			}
+			// Find element less than pivot starting from right
+			while (data[j] > pivot) {
+				j--;
+			}
+			
+			// Swap both elements if indexes haven't overlapped
+			if (i <= j) {
+				int temp = data[i];
+				data[i] = data[j];
+				data[j] = temp;
+				i++;
+				j--;
+			}
+		}
+		
+		// Repeat on left and right sides of the pivot's correct position
+		if (j > l) {
+			quickSortSort(l, j);
+		}
+		if (i < r) {
+			quickSortSort(i, r);
 		}
 	}
 	
