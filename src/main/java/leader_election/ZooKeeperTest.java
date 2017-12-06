@@ -141,17 +141,17 @@ public class ZooKeeperTest {
 		}
 		
 		// Start timer
-		long startTime = System.nanoTime();
+		//long startTime = System.nanoTime();
 		
 		// Send list of workers and input array to leader, have leader split the work amongst workers
 		ZooKeeperWorker leader = ZooKeeperWorker.getLeader();
 		int[] sortedArray = leader.leaderSort(workers, inputArray, type);
 		
 		// End timer
-		long endTime = System.nanoTime();
+		//long endTime = System.nanoTime();
 		// Print returned result
-		long duration = (endTime - startTime) / 1000;
-		System.out.println("Printing sorted array, sorting time: " + duration + " microseconds");
+		//long duration = (endTime - startTime) / 1000;
+		//System.out.println("Printing sorted array, sorting time: " + duration + " microseconds");
 		System.out.println(Arrays.toString(sortedArray));
 	}
 	
